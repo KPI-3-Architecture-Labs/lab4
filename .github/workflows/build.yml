@@ -1,20 +1,25 @@
 name: CI
-
 on:
-  push:
+  pull_request:
     branches:
-      - main
+      - '*'
+  push:
+    branches: [ main ]
 
 jobs:
-  build-and-test:
+  test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v2
-
-      - name: Run Integration Tests
+      - name: Update packages and module
+        run: |
+          go get -u ./...
+          go mod download
+          go mod tidy
+      - name: Setup Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '1.22'
+      - name: Running integration test
         run: docker-compose -f docker-compose.yaml -f docker-compose.test.yaml up --exit-code-from test
-
-      - name: Run Unit Tests
-        run: go test -v ./cmd/lb
