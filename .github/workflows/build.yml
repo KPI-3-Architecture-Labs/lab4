@@ -16,5 +16,10 @@ jobs:
       - name: Run Integration Tests
         run: docker-compose -f docker-compose.yaml -f docker-compose.test.yaml up --exit-code-from test
 
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.22.0
+
       - name: Run Unit Tests
         run: go test -v ./cmd/lb
