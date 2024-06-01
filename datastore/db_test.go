@@ -116,4 +116,38 @@ func TestPutAndGet(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("SHA-1 checksum validation", func(t *testing.T) {
+		for _, d := range data {
+			err := db.Put(d.key, d.value)
+			if err != nil {
+				t.Fatalf("Failed to put data: %v", err)
+			}
+
+			retrievedValue, err := db.Get(d.key)
+			if err != nil {
+				t.Fatalf("Failed to get data: %v", err)
+			}
+
+			if retrievedValue != d.value {
+				t.Errorf("Data mismatch: got %v, want %v", retrievedValue, d.value)
+			}
+
+			filePath := filepath.Join(dir, outFileName+"0")
+			if err := ioutil.WriteFile(filePath, []byte("corrupted data"), 0644); err != nil {
+				t.Fatal("Failed to corrupt data file")
+			}
+
+			db.out.Close()
+			db, err = NewDb(dir, 333)
+			if err != nil {
+				t.Fatal("Failed to reopen the database")
+			}
+
+			_, err = db.Get(d.key)
+			if err == nil {
+				t.Error("Expected error on data corruption, got none")
+			}
+		}
+	})
 }
