@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"bufio"
+	"crypto/sha1"
 	"encoding/binary"
 	"fmt"
 )
@@ -13,13 +14,15 @@ type entry struct {
 func (e *entry) Encode() []byte {
 	kl := len(e.key)
 	vl := len(e.value)
-	size := kl + vl + 12
+	hash := sha1.Sum([]byte(e.value))
+	size := kl + vl + 12 + len(hash)
 	res := make([]byte, size)
 	binary.LittleEndian.PutUint32(res, uint32(size))
 	binary.LittleEndian.PutUint32(res[4:], uint32(kl))
 	copy(res[8:], e.key)
 	binary.LittleEndian.PutUint32(res[kl+8:], uint32(vl))
 	copy(res[kl+12:], e.value)
+	copy(res[kl+vl+12:], hash[:])
 	return res
 }
 
@@ -33,6 +36,26 @@ func (e *entry) Decode(input []byte) {
 	valBuf := make([]byte, vl)
 	copy(valBuf, input[kl+12:kl+12+vl])
 	e.value = string(valBuf)
+
+	hashLen := sha1.Size
+	storedHash := input[len(input)-hashLen:]
+	calculatedHash := sha1.Sum(valBuf)
+
+	if !equal(storedHash, calculatedHash[:]) {
+		fmt.Errorf("SHA-1 checksum does not match")
+	}
+}
+
+func equal(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func readValue(in *bufio.Reader) (string, error) {

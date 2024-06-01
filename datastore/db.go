@@ -205,7 +205,6 @@ func (db *Db) recover() error {
 
 func (db *Db) Get(key string) (string, error) {
 	db.indexMutex.RLock()
-
 	defer db.indexMutex.RUnlock()
 
 	var (
@@ -215,9 +214,7 @@ func (db *Db) Get(key string) (string, error) {
 	)
 
 	for i := range db.segments {
-
 		segment = db.segments[len(db.segments)-i-1]
-
 		segment.mutex.RLock()
 
 		pos, ok = segment.index[key]
@@ -232,7 +229,12 @@ func (db *Db) Get(key string) (string, error) {
 		return "", ErrNotFound
 	}
 
-	return segment.getValue(pos)
+	value, err := segment.getValue(pos)
+	if err != nil {
+		return "", err
+	}
+
+	return value, nil
 }
 
 func (db *Db) Put(key, value string) error {
@@ -244,10 +246,10 @@ func (db *Db) Put(key, value string) error {
 	db.indexMutex.Lock()
 	defer db.indexMutex.Unlock()
 
-	size := int64(len(key) + len(value) + 12)
+	encodedEntry := entry.Encode()
+	size := int64(len(encodedEntry))
 
 	stat, err := db.out.Stat()
-
 	if err != nil {
 		return err
 	}
@@ -259,8 +261,7 @@ func (db *Db) Put(key, value string) error {
 		}
 	}
 
-	n, err := db.out.Write(entry.Encode())
-
+	n, err := db.out.Write(encodedEntry)
 	if err != nil {
 		return err
 	}
