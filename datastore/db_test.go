@@ -48,16 +48,16 @@ func TestPutAndGet(t *testing.T) {
 
 			err := db.Put(key, value)
 			if err != nil {
-				t.Errorf("Cannot put %s: %s", key, err)
+				t.Errorf("Unable to put %s: %s", key, err)
 			}
 
 			result, err := db.Get(key)
 			if err != nil {
-				t.Errorf("Cannot get %s: %s", key, err)
+				t.Errorf("Unable to get %s: %s", key, err)
 			}
 
 			if result != value {
-				t.Errorf("Bad value returned expected %s, got %s", value, result)
+				t.Errorf("Expected value: %s, but received: %s", value, result)
 			}
 		}
 	})
@@ -77,7 +77,7 @@ func TestPutAndGet(t *testing.T) {
 			err := db.Put(key, value)
 
 			if err != nil {
-				t.Errorf("Cannot put %s: %s", key, err)
+				t.Errorf("Unable to put %s: %s", key, err)
 			}
 
 		}
