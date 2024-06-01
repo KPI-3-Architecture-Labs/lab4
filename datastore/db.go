@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 const bufSize = 8192
@@ -20,6 +21,7 @@ type hashInd map[string]int64
 type FileSegment struct {
 	index   hashInd
 	outPath string
+	mutex   sync.RWMutex
 }
 
 type Db struct {
@@ -29,6 +31,7 @@ type Db struct {
 	segmentSize int64
 	totalNumber int
 	segments    []*FileSegment
+	indexMutex  sync.RWMutex
 }
 
 func (s *FileSegment) getValue(position int64) (string, error) {
@@ -192,30 +195,44 @@ func (db *Db) recover() error {
 			e.Decode(data)
 			db.segments[len(db.segments)-1].index[e.key] = db.outOffset
 			db.outOffset += int64(n)
+			db.indexMutex.Lock()
+			db.indexMutex.Unlock()
 		}
 	}
 
 	return err
 }
 
-func (db *Db) getIndex(key string) (*FileSegment, int64, error) {
+func (db *Db) Get(key string) (string, error) {
+	db.indexMutex.RLock()
+
+	defer db.indexMutex.RUnlock()
+
+	var (
+		segment *FileSegment
+		pos     int64
+		ok      bool
+	)
+
 	for i := range db.segments {
-		segment := db.segments[len(db.segments)-i-1]
-		if pos, ok := segment.index[key]; ok {
-			return segment, pos, nil
+
+		segment = db.segments[len(db.segments)-i-1]
+
+		segment.mutex.RLock()
+
+		pos, ok = segment.index[key]
+
+		segment.mutex.RUnlock()
+		if ok {
+			break
 		}
 	}
 
-	return nil, 0, nil
-}
-
-func (db *Db) Get(key string) (string, error) {
-	segment, position, err := db.getIndex(key)
-	if err != nil {
-		return "", err
+	if !ok {
+		return "", ErrNotFound
 	}
 
-	return segment.getValue(position)
+	return segment.getValue(pos)
 }
 
 func (db *Db) Put(key, value string) error {
@@ -223,6 +240,10 @@ func (db *Db) Put(key, value string) error {
 		key:   key,
 		value: value,
 	}
+
+	db.indexMutex.Lock()
+	defer db.indexMutex.Unlock()
+
 	size := int64(len(key) + len(value) + 12)
 
 	stat, err := db.out.Stat()
@@ -245,6 +266,8 @@ func (db *Db) Put(key, value string) error {
 	}
 
 	db.segments[len(db.segments)-1].index[entry.key] = db.outOffset
+	db.segments[len(db.segments)-1].mutex.Lock()
+	db.segments[len(db.segments)-1].mutex.Unlock()
 	db.outOffset += int64(n)
 
 	return nil
