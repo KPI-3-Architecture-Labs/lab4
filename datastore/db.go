@@ -273,3 +273,5 @@ func (db *Db) Put(key, value string) error {
 
 	return nil
 }
+
+func (db *Db) Close() { db.out.Close() }
