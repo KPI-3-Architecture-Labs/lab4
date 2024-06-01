@@ -209,6 +209,15 @@ func (db *Db) getIndex(key string) (*FileSegment, int64, error) {
 	return nil, 0, nil
 }
 
+func (db *Db) Get(key string) (string, error) {
+	segment, position, err := db.getIndex(key)
+	if err != nil {
+		return "", err
+	}
+
+	return segment.getValue(position)
+}
+
 func (db *Db) Put(key, value string) error {
 	entry := entry{
 		key:   key,
