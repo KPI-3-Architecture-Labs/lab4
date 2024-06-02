@@ -48,8 +48,9 @@ func main() {
 		json.NewEncoder(w).Encode(data)
 	})
 
-	server := httptools.CreateServer(8081, nil)
+	server := httptools.CreateServer(8080, nil)
 	server.Start()
+	time.Sleep(5 * time.Second)
 	signal.WaitForTerminationSignal()
 }
 
