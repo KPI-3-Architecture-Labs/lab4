@@ -7,13 +7,30 @@ import (
 	"github.com/KPI-3-Architecture-Labs/lab4/signal"
 	"log"
 	"net/http"
+	"os"
 	"time"
 )
+
+const confHealthFailure = "CONF_HEALTH_FAILURE"
 
 func main() {
 	dbURL := "http://localhost:8083"
 
 	saveCurrentDate(dbURL, "teamye")
+
+	http.HandleFunc("/health", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "text/plain")
+
+		if failConfig := os.Getenv(confHealthFailure); failConfig == "true" {
+
+			rw.WriteHeader(http.StatusInternalServerError)
+			_, _ = rw.Write([]byte("FAILURE"))
+		} else {
+			rw.WriteHeader(http.StatusOK)
+			_, _ = rw.Write([]byte("OK"))
+		}
+
+	})
 
 	http.HandleFunc("/api/v1/some-data", func(w http.ResponseWriter, r *http.Request) {
 		key := r.URL.Query().Get("key")
