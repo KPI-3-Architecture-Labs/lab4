@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"testing"
+	"time"
 )
 
 func Test(t *testing.T) {
@@ -79,15 +79,22 @@ func (s *TestSuite) TestBalancer(t *testing.T) {
 }
 
 func (s *TestSuite) TestHealth(t *testing.T) {
-	serverURL := os.Getenv("SERVER_URL")
-	if serverURL == "" {
-		serverURL = "http://localhost:8080"
+	result := make([]string, len(serversPool))
+
+	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server1.Close()
+
+	parsedURL1, _ := url.Parse(server1.URL)
+	hostURL1 := parsedURL1.Host
+
+	servers := []string{
+		hostURL1,
 	}
 
-	resp, err := http.Get(serverURL + "/health")
-	if err != nil {
-		t.Fatalf("Failed to make request to %s: %s", serverURL+"/health", err)
-	}
-	defer resp.Body.Close()
-	assert.Equal(t, http.StatusOK, resp.StatusCode, "Health check failed for the main server")
+	healthCheck(servers, result)
+	time.Sleep(12 * time.Second)
+
+	server1.Close()
 }

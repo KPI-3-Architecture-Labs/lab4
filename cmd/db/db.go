@@ -13,17 +13,7 @@ import (
 
 var port = flag.Int("port", 8083, "server port")
 
-type Request struct {
-	Value string `json:"value"`
-}
-
-type Response struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
-
 func main() {
-	flag.Parse()
 
 	dir, err := ioutil.TempDir("", "temp-dir")
 	if err != nil {
@@ -34,7 +24,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	defer db.Close()
 
 	h := http.NewServeMux()
@@ -44,56 +33,46 @@ func main() {
 
 		switch req.Method {
 		case http.MethodGet:
-
 			value, err := db.Get(key)
-
 			if err != nil {
 				rw.WriteHeader(http.StatusNotFound)
-				json.NewEncoder(rw).Encode(map[string]string{"error 404": "Not found"})
+				json.NewEncoder(rw).Encode(map[string]string{"error": "Not found"})
 				return
 			}
 
-			resp := Response{
-				Key:   key,
-				Value: value,
-			}
+			resp := struct {
+				Key   string `json:"key"`
+				Value string `json:"value"`
+			}{Key: key, Value: value}
 
 			rw.Header().Set("Content-Type", "application/json")
-
 			rw.WriteHeader(http.StatusOK)
-
-			_ = json.NewEncoder(rw).Encode(resp)
+			json.NewEncoder(rw).Encode(resp)
 
 		case http.MethodPost:
-			var body Request
-
-			err := json.NewDecoder(req.Body).Decode(&body)
-
-			if err != nil {
+			var body struct {
+				Value string `json:"value"`
+			}
+			if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 				rw.WriteHeader(http.StatusBadRequest)
 				json.NewEncoder(rw).Encode(map[string]string{"error": "Bad request"})
 				return
 			}
 
-			err = db.Put(key, body.Value)
-
-			if err != nil {
+			if err := db.Put(key, body.Value); err != nil {
 				rw.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(rw).Encode(map[string]string{"error": "InternalServerError"})
+				json.NewEncoder(rw).Encode(map[string]string{"error": "Internal Server Error"})
 				return
 			}
-
 			rw.WriteHeader(http.StatusCreated)
 
 		default:
 			rw.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(rw).Encode(map[string]string{"error": "Bad request"})
+			json.NewEncoder(rw).Encode(map[string]string{"error": "Method not allowed"})
 		}
 	})
 
 	server := httptools.CreateServer(*port, h)
-
 	server.Start()
-
 	signal.WaitForTerminationSignal()
 }

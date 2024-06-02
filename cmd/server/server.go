@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"github.com/KPI-3-Architecture-Labs/lab4/httptools"
 	"github.com/KPI-3-Architecture-Labs/lab4/signal"
 	"log"
@@ -11,12 +12,15 @@ import (
 	"time"
 )
 
+var port = flag.Int("port", 8080, "server port")
+
+const dbUrl = "http://db:8083"
+
 const confHealthFailure = "CONF_HEALTH_FAILURE"
 
 func main() {
-	dbURL := "http://localhost:8083"
 
-	saveCurrentDate(dbURL, "teamye")
+	saveCurrentDate(dbUrl, "teamye")
 
 	http.HandleFunc("/health", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "text/plain")
@@ -40,7 +44,7 @@ func main() {
 			return
 		}
 
-		resp, err := http.Get(dbURL + "/db/" + key)
+		resp, err := http.Get(dbUrl + "/db/" + key)
 
 		if err != nil {
 			http.Error(w, "Service is not available", http.StatusServiceUnavailable)
@@ -65,7 +69,7 @@ func main() {
 		json.NewEncoder(w).Encode(data)
 	})
 
-	server := httptools.CreateServer(8080, nil)
+	server := httptools.CreateServer(*port, nil)
 	server.Start()
 	time.Sleep(5 * time.Second)
 	signal.WaitForTerminationSignal()
