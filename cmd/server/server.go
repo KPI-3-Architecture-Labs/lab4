@@ -1,56 +1,93 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
-	"net/http"
-	"os"
-	"strconv"
-	"time"
-
 	"github.com/KPI-3-Architecture-Labs/lab4/httptools"
 	"github.com/KPI-3-Architecture-Labs/lab4/signal"
+	"log"
+	"net/http"
+	"os"
+	"time"
 )
 
 var port = flag.Int("port", 8080, "server port")
 
-const confResponseDelaySec = "CONF_RESPONSE_DELAY_SEC"
+const dbUrl = "http://db:8083"
+
 const confHealthFailure = "CONF_HEALTH_FAILURE"
 
 func main() {
-	h := new(http.ServeMux)
 
-	h.HandleFunc("/health", func(rw http.ResponseWriter, r *http.Request) {
-		rw.Header().Set("content-type", "text/plain")
+	saveCurrentDate(dbUrl, "teamye")
+
+	http.HandleFunc("/health", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "text/plain")
+
 		if failConfig := os.Getenv(confHealthFailure); failConfig == "true" {
+
 			rw.WriteHeader(http.StatusInternalServerError)
 			_, _ = rw.Write([]byte("FAILURE"))
 		} else {
 			rw.WriteHeader(http.StatusOK)
 			_, _ = rw.Write([]byte("OK"))
 		}
+
 	})
 
-	report := make(Report)
+	http.HandleFunc("/api/v1/some-data", func(w http.ResponseWriter, r *http.Request) {
+		key := r.URL.Query().Get("key")
 
-	h.HandleFunc("/api/v1/some-data", func(rw http.ResponseWriter, r *http.Request) {
-		respDelayString := os.Getenv(confResponseDelaySec)
-		if delaySec, parseErr := strconv.Atoi(respDelayString); parseErr == nil && delaySec > 0 && delaySec < 300 {
-			time.Sleep(time.Duration(delaySec) * time.Second)
+		if key == "" {
+			http.Error(w, "Key required", http.StatusBadRequest)
+			return
 		}
 
-		report.Process(r)
+		resp, err := http.Get(dbUrl + "/db/" + key)
 
-		rw.Header().Set("content-type", "application/json")
-		rw.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(rw).Encode([]string{
-			"1", "2",
-		})
+		if err != nil {
+			http.Error(w, "Service is not available", http.StatusServiceUnavailable)
+			return
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusNotFound {
+			http.NotFound(w, r)
+			return
+		}
+
+		var data map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			http.Error(w, "Error while decoding response", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		json.NewEncoder(w).Encode(data)
 	})
 
-	h.Handle("/report", report)
-
-	server := httptools.CreateServer(*port, h)
+	server := httptools.CreateServer(*port, nil)
 	server.Start()
+	time.Sleep(5 * time.Second)
 	signal.WaitForTerminationSignal()
+}
+
+func saveCurrentDate(dbURL, teamKey string) {
+	currentDate := time.Now().Format("2006-01-02")
+	data := map[string]string{
+		"value": currentDate,
+	}
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		log.Fatal("JSON marshalling error:", err)
+	}
+
+	_, err = http.Post(dbURL+"/db/"+teamKey, "application/json", bytes.NewBuffer(jsonData))
+
+	if err != nil {
+		log.Fatal("Error saving current date:", err)
+	}
 }
