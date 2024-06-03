@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"log"
 	"net/http"
@@ -29,11 +30,9 @@ var (
 		"server2:8080",
 		"server3:8080",
 	}
-	poolOfHealthyServers = make([]string, len(serversPool))
-	poolLock             sync.Mutex
+	healthyPool = make([]string, len(serversPool))
 
-	bytesServed     = make(map[string]int64)
-	bytesServedLock sync.Mutex
+	poolLock sync.Mutex
 )
 
 func scheme() string {
@@ -94,92 +93,20 @@ func forward(dst string, rw http.ResponseWriter, r *http.Request) error {
 
 	log.Println("fwd", resp.StatusCode, resp.Request.URL)
 	rw.WriteHeader(resp.StatusCode)
-
-	bytes, err := io.Copy(rw, resp.Body)
+	_, err = io.Copy(rw, resp.Body)
 	if err != nil {
 		log.Printf("Failed to write response: %s", err)
 	}
-
-	bytesServedLock.Lock()
-	bytesServed[dst] += bytes
-	bytesServedLock.Unlock()
-
 	return nil
-}
-
-func getSmallestTraffic() int {
-	bytesServedLock.Lock()
-	defer bytesServedLock.Unlock()
-
-	var minBytes int64 = -1
-	minIndex := -1
-
-	for i, server := range poolOfHealthyServers {
-		if server == "" {
-			continue
-		}
-		if minBytes == -1 || bytesServed[server] < minBytes {
-			minBytes = bytesServed[server]
-			minIndex = i
-		}
-	}
-
-	return minIndex
-}
-
-func getServer(index int) string {
-	poolLock.Lock()
-	defer poolLock.Unlock()
-	return poolOfHealthyServers[index]
-}
-
-func healthCheck(servers []string, result []string) {
-	healthStatus := make(map[string]bool)
-	for _, server := range servers {
-		healthStatus[server] = true
-	}
-
-	for i, server := range servers {
-		i := i
-		go func(server string) {
-			for range time.Tick(10 * time.Second) {
-				isHealthy := health(server)
-				poolLock.Lock()
-
-				if isHealthy {
-					healthStatus[server] = true
-					result[i] = server
-				} else {
-					healthStatus[server] = false
-					result[i] = ""
-				}
-
-				poolOfHealthyServers = nil
-
-				for _, server := range servers {
-					if healthStatus[server] {
-						poolOfHealthyServers = append(poolOfHealthyServers, server)
-					}
-				}
-
-				poolLock.Unlock()
-				log.Println(server, isHealthy)
-			}
-		}(server)
-	}
 }
 
 func main() {
 	flag.Parse()
 
-	healthCheck(serversPool, poolOfHealthyServers)
+	healthCheck(serversPool, healthyPool)
 
 	frontend := httptools.CreateServer(*port, http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		serverIndex := getSmallestTraffic()
-		if serverIndex == -1 {
-			http.Error(rw, "No available servers", http.StatusServiceUnavailable)
-			return
-		}
+		serverIndex := getIndex(r.RemoteAddr)
 		dst := getServer(serverIndex)
 		err := forward(dst, rw, r)
 		if err != nil {
@@ -191,4 +118,55 @@ func main() {
 	log.Printf("Tracing support enabled: %t", *traceEnabled)
 	frontend.Start()
 	signal.WaitForTerminationSignal()
+}
+
+func getIndex(address string) int {
+	hash := fnv.New32()
+	hash.Write([]byte(address))
+	hashed := int(hash.Sum32())
+	serverIndex := hashed % len(healthyPool)
+	return serverIndex
+}
+
+func getServer(index int) string {
+	poolLock.Lock()
+	defer poolLock.Unlock()
+	return healthyPool[index]
+}
+
+func healthCheck(servers []string, result []string) {
+
+	healthStatus := make(map[string]bool)
+	for _, server := range servers {
+		healthStatus[server] = true
+	}
+
+	for i, server := range servers {
+		i := i
+		go func(server string) {
+			for range time.Tick(10 * time.Second) {
+				isHealthy := health(server)
+				poolLock.Lock()
+				if isHealthy {
+
+					healthStatus[server] = true
+					result[i] = server
+				} else {
+
+					healthStatus[server] = false
+					result[i] = ""
+				}
+
+				healthyPool = nil
+				for _, server := range servers {
+					if healthStatus[server] {
+						healthyPool = append(healthyPool, server)
+					}
+				}
+
+				poolLock.Unlock()
+				log.Println(server, isHealthy)
+			}
+		}(server)
+	}
 }
